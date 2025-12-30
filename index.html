@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Marine Physics: 和船 vs 現代工学</title>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #020617; color: white; font-family: 'Segoe UI', 'Meiryo', sans-serif; }
+        canvas { display: block; outline: none; }
+        
+        /* Glassmorphism Panel Design */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+            transition: all 0.3s ease;
+        }
+
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 24px;
+            width: 350px;
+            z-index: 10;
+        }
+
+        .stats-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            height: 240px;
+            padding: 20px;
+            display: flex;
+            gap: 24px;
+            z-index: 10;
+        }
+
+        .detail-overlay {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            padding: 24px;
+            display: none; 
+            z-index: 20;
+            border-left: 4px solid #3b82f6;
+            animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(30px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Interactive Elements */
+        input[type=range] {
+            width: 100%;
+            height: 6px;
+            background: #334155;
+            border-radius: 3px;
+            appearance: none;
+            outline: none;
+            margin: 10px 0;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #60a5fa;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(96, 165, 250, 0.4);
+            transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.1); }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; border: none; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); }
+        .btn-secondary { background: transparent; color: #94a3b8; border: 1px solid #475569; }
+        .btn-secondary:hover { background: rgba(255,255,255,0.05); color: white; border-color: #94a3b8; }
+
+        .legend-item { display: flex; align-items: flex-start; margin-bottom: 12px; }
+        .legend-dot { width: 12px; height: 12px; border-radius: 3px; margin-top: 4px; margin-right: 12px; }
+        .type-desc { font-size: 0.7rem; color: #64748b; margin-top: 2px; }
+        
+        .chart-container { flex: 1; position: relative; min-width: 0; }
+        .stat-label { font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+    </style>
+</head>
+<body>
+
+<!-- UI: Control Panel -->
+<div class="glass-panel control-panel">
+    <div class="flex items-baseline justify-between mb-2">
+        <h1 class="text-xl font-black text-white">船舶推進物理</h1>
+        <span class="text-[10px] bg-blue-600 px-2 py-0.5 rounded text-white font-mono">CORE v3.5</span>
+    </div>
+    
+    <div class="mb-6">
+        <div class="flex justify-between items-end mb-1">
+            <label class="text-xs font-bold text-slate-300">入力パワー (Input Power)</label>
+            <span class="text-xl font-mono font-bold text-blue-400" id="powerDisplay">500 W</span>
+        </div>
+        <input type="range" id="powerRange" min="100" max="2000" step="50" value="500">
+    </div>
+
+    <div class="space-y-4 mb-6">
+        <div class="legend-item">
+            <div class="legend-dot bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
+            <div>
+                <span class="block text-sm font-bold">櫓 (Ro)</span>
+                <span class="type-desc block">大流量・低流速 (揚力・非定常流モデル)</span>
+            </div>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+            <div>
+                <span class="block text-sm font-bold">スクリュー</span>
+                <span class="type-desc block">バランス型 (定常揚力モデル)</span>
+            </div>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
+            <div>
+                <span class="block text-sm font-bold">ウォータージェット</span>
+                <span class="type-desc block">高速噴流 (運動量モデル)</span>
+            </div>
+        </div>
+    </div>
+
+    <button id="startBtn" class="btn btn-primary mb-2">Simulation Start</button>
+    <button id="resetBtn" class="btn btn-secondary">Reset View</button>
+</div>
+
+<!-- UI: Detail Analysis Panel -->
+<div id="detailPanel" class="glass-panel detail-overlay">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <span class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Analysis</span>
+            <h2 id="detailName" class="text-2xl font-black italic text-white leading-none mt-1">SHIP TYPE</h2>
+        </div>
+        <button id="closeDetail" class="text-slate-500 hover:text-white transition-colors">✕</button>
+    </div>
+
+    <div class="space-y-6">
+        <!-- Speed Gauge -->
+        <div>
+            <div class="flex justify-between items-end mb-2">
+                <span class="stat-label">速度 (Speed)</span>
+                <span id="detailSpeed" class="text-2xl font-mono font-bold text-white">0.00 <span class="text-xs text-slate-500">m/s</span></span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div id="speedBar" class="bg-white h-full transition-all duration-300 shadow-[0_0_10px_rgba(255,255,255,0.3)]" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Force Stats -->
+        <div class="grid grid-cols-2 gap-4">
+            <div class="bg-slate-800/40 rounded-xl p-3 border border-slate-700/30">
+                <div class="stat-label mb-1">推力 (Thrust)</div>
+                <div id="detailThrust" class="font-mono font-bold text-green-400 text-lg">0 N</div>
+            </div>
+            <div class="bg-slate-800/40 rounded-xl p-3 border border-slate-700/30">
+                <div class="stat-label mb-1">抗力 (Drag)</div>
+                <div id="detailDrag" class="font-mono font-bold text-red-400 text-lg">0 N</div>
+            </div>
+        </div>
+
+        <!-- Efficiency Gauge -->
+        <div class="pt-4 border-t border-slate-700/50">
+            <div class="flex justify-between items-center mb-2">
+                <span class="stat-label">推進効率 (Efficiency)</span>
+                <span id="detailEff" class="font-mono font-bold text-yellow-400 text-xl">0.0 %</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div id="effBar" class="bg-yellow-400 h-full transition-all duration-300 shadow-[0_0_10px_rgba(250,204,21,0.3)]" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Yaw Info -->
+        <div class="flex justify-between items-center">
+            <span class="stat-label">進路偏差 (Yaw)</span>
+            <span id="detailYaw" class="font-mono text-slate-200 font-bold">0.00°</span>
+        </div>
+    </div>
+</div>
+
+<!-- UI: Bottom Analytics -->
+<div class="glass-panel stats-panel">
+    <div class="chart-container">
+        <canvas id="speedChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <canvas id="effChart"></canvas>
+    </div>
+    <div class="w-32 flex flex-col justify-center items-center text-center border-l border-slate-700/50 pl-6">
+        <span class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Elapsed Time</span>
+        <span id="timer" class="text-3xl font-mono font-black text-white my-1">0.0s</span>
+        <div class="mt-4 px-2 py-1 bg-green-500/10 rounded border border-green-500/20">
+            <span class="text-[9px] text-green-500 font-bold">PHYSICS ENGINE<br>ONLINE</span>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * 物理シミュレーション定数 (運動量理論)
+ */
+const CONFIG = {
+    WATER_DENSITY: 1025,  // kg/m3 (海水)
+    SHIP_MASS: 600,       // kg
+    BASE_DRAG: 0.28,      // 船体抗力係数
+    DT: 1/60,
+    
+    // 各推進方式の物理特性定義
+    TYPES: {
+        'RO': { 
+            name: '櫓 (Ro)', 
+            color: 0xef4444,
+            area: 1.6,        // 大流量・断面積大 -> 初期推力大
+            mechEff: 0.85,    // 低速時の高い機械効率
+            yawAmp: 35.0,     // 特有の揺れ
+            yawFreq: 1.0,
+            colorHex: '#ef4444'
+        },
+        'SCREW': { 
+            name: 'スクリュー', 
+            color: 0x3b82f6,
+            area: 0.18,       // バランス型
+            mechEff: 0.70,
+            yawAmp: 4.0, 
+            yawFreq: 0,
+            colorHex: '#3b82f6'
+        },
+        'JET': { 
+            name: 'ウォータージェット', 
+            color: 0x22c55e,
+            area: 0.018,      // 高速噴流・断面積小 -> 後半伸びる
+            mechEff: 0.62,    // 管内損失
+            yawAmp: 1.2, 
+            yawFreq: 0,
+            colorHex: '#22c55e'
+        }
+    }
+};
+
+// Global Variables
+let scene, camera, renderer, controls, raycaster, mouse;
+let ships = [];
+let particles = [];
+let waterMesh;
+let simTime = 0;
+let isRunning = false;
+let inputPower = 500;
+let charts = {};
+let selectedShip = null;
+
+/**
+ * リアルな船体モデル（プロシージャル生成）
+ */
+function createRealisticHull(color) {
+    const group = new THREE.Group();
+    
+    // 船体 (Hull) - 曲線的な形状
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0.8); 
+    shape.bezierCurveTo(1, 0.8, 1.8, 0.4, 2, 0); 
+    shape.bezierCurveTo(1.8, -0.4, 1, -0.8, 0, -0.8); 
+    shape.lineTo(-1.5, -0.6); 
+    shape.lineTo(-1.5, 0.6); 
+    shape.lineTo(0, 0.8);
+
+    const extrudeSettings = { depth: 0.8, bevelEnabled: true, bevelThickness: 0.1, bevelSize: 0.1, bevelSegments: 3 };
+    const hullGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    const hullMat = new THREE.MeshStandardMaterial({ 
+        color: color, 
+        metalness: 0.4, 
+        roughness: 0.5 
+    });
+    const hull = new THREE.Mesh(hullGeo, hullMat);
+    hull.rotation.x = Math.PI / 2;
+    hull.position.y = 0.2;
+    hull.castShadow = true;
+    hull.receiveShadow = true;
+    group.add(hull);
+
+    // デッキ
+    const deckGeo = new THREE.PlaneGeometry(3, 1.4);
+    const deckMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+    const deck = new THREE.Mesh(deckGeo, deckMat);
+    deck.rotation.x = -Math.PI / 2;
+    deck.position.set(-0.2, 0.61, 0);
+    deck.receiveShadow = true;
+    group.add(deck);
+
+    // キャビン
+    const cabinGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
+    const cabinMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+    const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+    cabin.position.set(-0.5, 0.9, 0);
+    cabin.castShadow = true;
+    cabin.receiveShadow = true;
+    group.add(cabin);
+
+    return group;
+}
+
+/**
+ * 船クラス：物理演算と表示
+ */
+class Ship {
+    constructor(type, zPos) {
+        this.type = type;
+        this.params = CONFIG.TYPES[type];
+        this.initialPos = new THREE.Vector3(0, 0, zPos);
+        
+        // 物理状態量
+        this.pos = this.initialPos.clone();
+        this.vel = new THREE.Vector3(0, 0, 0);
+        this.acc = 0;
+        this.angle = 0;
+        this.angularVel = 0;
+        
+        // メッシュ構築
+        this.group = new THREE.Group();
+        this.hullGroup = createRealisticHull(this.params.color);
+        this.group.add(this.hullGroup);
+
+        this.setupPropVisual();
+        
+        this.group.position.copy(this.pos);
+        scene.add(this.group);
+        
+        // レイキャスト用（親をたどれるように設定）
+        this.hullGroup.traverse(c => { if(c.isMesh) c.userData.ship = this; });
+        
+        this.stats = { speed: 0, thrust: 0, drag: 0, eff: 0, yaw: 0 };
+    }
+
+    setupPropVisual() {
+        if (this.type === 'RO') {
+            const oarGeo = new THREE.CylinderGeometry(0.04, 0.06, 3.5, 8);
+            this.propMesh = new THREE.Mesh(oarGeo, new THREE.MeshStandardMaterial({ color: 0x78350f }));
+            this.propMesh.position.set(-1.8, 0.4, 0);
+            this.propMesh.rotation.z = Math.PI / 4;
+            this.propMesh.castShadow = true;
+            this.group.add(this.propMesh);
+        } else if (this.type === 'SCREW') {
+            const propGroup = new THREE.Group();
+            const hub = new THREE.Mesh(new THREE.SphereGeometry(0.15), new THREE.MeshStandardMaterial({ color: 0x94a3b8 }));
+            propGroup.add(hub);
+            for(let i=0; i<3; i++){
+                const b = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.6, 0.2), new THREE.MeshStandardMaterial({ color: 0x94a3b8 }));
+                b.rotation.x = (Math.PI*2/3)*i; b.position.y = 0.25;
+                propGroup.add(b);
+            }
+            this.propMesh = propGroup;
+            this.propMesh.position.set(-1.6, 0, 0);
+            this.group.add(this.propMesh);
+        } else {
+            const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.15, 0.5), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+            nozzle.rotation.z = Math.PI/2; nozzle.position.set(-1.6, 0.1, 0);
+            this.propMesh = nozzle;
+            this.group.add(this.propMesh);
+        }
+    }
+
+    updatePhysics(dt) {
+        if (!isRunning) return;
+
+        const vShip = this.vel.x;
+        const pIn = inputPower * this.params.mechEff;
+
+        /**
+         * 運動量理論ベースの推力計算
+         * P = 1/2 * m_dot * (v_jet^2 - v_ship^2)
+         * T = m_dot * (v_jet - v_ship)
+         * 
+         * v_jet は断面積が小さいほど、同じパワーでも高速になる
+         */
+        // 簡易近似式
+        let vJet = Math.pow(pIn / (CONFIG.WATER_DENSITY * this.params.area * 0.5), 1/3) * 7.0;
+        
+        // 特性調整（物理的制約）
+        if (this.type === 'JET') vJet += (vShip * 0.2); // ラム圧効果（高速で効率維持）
+        if (this.type === 'RO') vJet = Math.max(vShip, vJet * (1.0 - vShip/12.0)); // 物理的限界（高速で漕げなくなる）
+
+        // 推力計算 (スリップが大きいほど推力は出るが、効率は落ちる)
+        const slip = Math.max(0.1, vJet - vShip);
+        let thrust = (CONFIG.WATER_DENSITY * this.params.area * vJet) * slip * 0.08;
+
+        // 抗力 (粘性 + 造波)
+        const drag = CONFIG.BASE_DRAG * vShip * vShip + (vShip * 6); 
+
+        // 運動方程式
+        const netForce = Math.max(0, thrust - drag);
+        this.acc = netForce / CONFIG.SHIP_MASS;
+        this.vel.x += this.acc * dt;
+
+        // ヨーイング（進路の揺れ）
+        let torque = 0;
+        if (this.type === 'RO') {
+            const phase = simTime * Math.PI * 2 * this.params.yawFreq;
+            torque = Math.sin(phase) * this.params.yawAmp;
+            // ビジュアル更新
+            this.propMesh.rotation.y = Math.sin(phase) * 0.6;
+            this.propMesh.rotation.x = Math.cos(phase) * 0.15;
+        } else if (this.type === 'SCREW') {
+            torque = this.params.yawAmp; // プロペラウォーク
+            this.propMesh.rotation.x += (vShip + 1.5) * 0.3;
+        } else {
+            torque = (Math.random()-0.5) * this.params.yawAmp; // ほぼ直進
+        }
+
+        const restoring = -this.angle * 6.0; // 復元力
+        this.angularVel += (torque + restoring) * dt * 0.12;
+        this.angularVel *= 0.92;
+        this.angle += this.angularVel * dt;
+
+        // 座標更新 (3D的な動き)
+        this.pos.x += Math.cos(this.angle * 0.05) * this.vel.x * dt;
+        this.pos.z += Math.sin(this.angle * 0.05) * this.vel.x * dt;
+        
+        // 波の揺れ + 加速時のピッチング
+        const waveY = Math.sin(simTime*3 + this.pos.x*0.1)*0.05;
+        this.group.position.set(this.pos.x, waveY, this.pos.z + this.pos.y);
+        
+        this.group.rotation.y = -this.angle * 0.06;
+        this.group.rotation.z = Math.sin(simTime*2) * 0.01; // ローリング
+        this.group.rotation.x = -this.acc * 0.05; // ピッチアップ
+
+        // 統計データ更新
+        const eff = (inputPower > 0) ? (thrust * vShip / inputPower) * 100 : 0;
+        this.stats = { 
+            speed: vShip, 
+            thrust: thrust, 
+            drag: drag, 
+            eff: Math.min(100, eff), 
+            yaw: Math.abs(this.angle * 0.1) 
+        };
+
+        // 航跡パーティクル生成
+        if (simTime % 0.05 < dt) createWake(this.group.position.x - 2, this.group.position.z, thrust);
+    }
+
+    reset() {
+        this.pos.x = 0; 
+        this.vel.x = 0; 
+        this.angle = 0; 
+        this.angularVel = 0;
+        this.group.position.set(0, 0, this.pos.y + this.pos.z);
+        this.group.rotation.set(0,0,0);
+        this.stats = { speed: 0, thrust: 0, drag: 0, eff: 0, yaw: 0 };
+    }
+}
+
+/**
+ * ビジュアル表現: 波と航跡
+ */
+function createWake(x, z, thrust) {
+    const geo = new THREE.PlaneGeometry(0.3, 0.3);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+    const p = new THREE.Mesh(geo, mat);
+    
+    p.rotation.x = -Math.PI / 2;
+    p.position.set(x, 0.05, z + (Math.random()-0.5)*0.2);
+    
+    // 推力が大きいほど後ろに速く流れる
+    p.userData = { life: 1.0, vel: -(thrust/250 + 1.0) };
+    
+    scene.add(p);
+    particles.push(p);
+}
+
+function updateWaves(time) {
+    // 頂点を動かして波を表現
+    const pos = waterMesh.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i); 
+        const y = pos.getY(i); // 平面形状なのでZではなくYが奥行きになる場合があるが、Rotationしているので注意
+        // 波の計算: 複数のSin波を合成
+        const z = Math.sin(x * 0.12 + time * 1.5) * 0.25 + Math.cos(y * 0.12 + time) * 0.25;
+        pos.setZ(i, z);
+    }
+    pos.needsUpdate = true;
+}
+
+/**
+ * シーン初期化
+ */
+function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x020617);
+    scene.fog = new THREE.FogExp2(0x020617, 0.012);
+
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(-18, 14, 25);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(8, 0, 0);
+
+    // ライティング
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    sun.position.set(30, 50, 20); 
+    sun.castShadow = true;
+    sun.shadow.mapSize.width = 2048;
+    sun.shadow.mapSize.height = 2048;
+    scene.add(sun);
+
+    // 水面
+    const waterGeo = new THREE.PlaneGeometry(2000, 500, 100, 25);
+    const waterMat = new THREE.MeshStandardMaterial({ 
+        color: 0x1e293b, 
+        transparent: true, 
+        opacity: 0.9, 
+        roughness: 0.1, 
+        metalness: 0.1,
+        flatShading: true 
+    });
+    waterMesh = new THREE.Mesh(waterGeo, waterMat);
+    waterMesh.rotation.x = -Math.PI/2; 
+    waterMesh.position.y = -0.2;
+    waterMesh.receiveShadow = true;
+    scene.add(waterMesh);
+
+    // グリッド
+    const grid = new THREE.GridHelper(2000, 100, 0x334155, 0x0f172a);
+    grid.position.y = -0.19;
+    scene.add(grid);
+
+    // 船の生成
+    ships.push(new Ship('RO', 8));
+    ships.push(new Ship('SCREW', 0));
+    ships.push(new Ship('JET', -8));
+
+    // インタラクション
+    raycaster = new THREE.Raycaster(); 
+    mouse = new THREE.Vector2();
+    
+    window.addEventListener('mousedown', (e) => {
+        if(e.target.tagName !== 'CANVAS') return;
+        
+        mouse.x = (e.clientX/window.innerWidth)*2-1; 
+        mouse.y = -(e.clientY/window.innerHeight)*2+1;
+        raycaster.setFromCamera(mouse, camera);
+        const hits = raycaster.intersectObjects(scene.children, true);
+        
+        let shipFound = null;
+        for(let h of hits) {
+            let o = h.object; 
+            while(o) { 
+                if(o.userData.ship) { shipFound = o.userData.ship; break; } 
+                o = o.parent; 
+            }
+            if(shipFound) break;
+        }
+        
+        if(shipFound) {
+            selectedShip = shipFound;
+            document.getElementById('detailPanel').style.display = 'block';
+            document.getElementById('detailName').innerText = shipFound.params.name;
+            document.getElementById('detailName').style.color = shipFound.params.colorHex;
+        }
+    });
+
+    initCharts();
+}
+
+/**
+ * グラフ初期化（Chart.js）
+ */
+function initCharts() {
+    const config = (title) => ({
+        type: 'line',
+        options: {
+            responsive: true, 
+            maintainAspectRatio: false, 
+            animation: false,
+            scales: { 
+                x: { display: false }, 
+                y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 9 } } } 
+            },
+            plugins: { 
+                legend: { display: false }, 
+                title: { display: true, text: title, color: '#94a3b8', font: { weight: 'bold' } } 
+            },
+            elements: { point: { radius: 0 } }
+        }
+    });
+
+    charts.speed = new Chart(document.getElementById('speedChart'), {
+        ...config('速度推移 (m/s)'),
+        data: { labels: [], datasets: ships.map(s => ({ data: [], borderColor: s.params.colorHex, borderWidth: 2, tension: 0.4 })) }
+    });
+
+    charts.eff = new Chart(document.getElementById('effChart'), {
+        ...config('推進効率 (%)'),
+        data: { labels: [], datasets: ships.map(s => ({ data: [], borderColor: s.params.colorHex, borderWidth: 2, tension: 0.4 })) }
+    });
+}
+
+/**
+ * メインループ
+ */
+function animate() {
+    requestAnimationFrame(animate);
+    const dt = CONFIG.DT;
+
+    if(isRunning) {
+        simTime += dt;
+        
+        // 物理計算更新
+        ships.forEach(s => s.updatePhysics(dt));
+        updateWaves(simTime);
+        
+        // パーティクル更新
+        for(let i=particles.length-1; i>=0; i--){
+            const p = particles[i];
+            p.userData.life -= dt; 
+            p.position.x += p.userData.vel * dt;
+            p.scale.multiplyScalar(1.02); // 拡散
+            p.material.opacity = p.userData.life * 0.5;
+            
+            if(p.userData.life<=0) { 
+                scene.remove(p); 
+                particles.splice(i,1); 
+            }
+        }
+
+        // グラフ更新 (負荷軽減のため4フレームに1回)
+        if(Math.floor(simTime*60)%15===0) {
+            const label = simTime.toFixed(1);
+            charts.speed.data.labels.push(label); 
+            charts.eff.data.labels.push(label);
+            
+            // データ数制限
+            if(charts.speed.data.labels.length>60) { 
+                charts.speed.data.labels.shift(); 
+                charts.eff.data.labels.shift(); 
+            }
+            
+            ships.forEach((s,i) => {
+                charts.speed.data.datasets[i].data.push(s.stats.speed); 
+                charts.eff.data.datasets[i].data.push(s.stats.eff);
+                
+                if(charts.speed.data.datasets[i].data.length>60) { 
+                    charts.speed.data.datasets[i].data.shift(); 
+                    charts.eff.data.datasets[i].data.shift(); 
+                }
+            });
+            charts.speed.update('none'); 
+            charts.eff.update('none');
+        }
+
+        // カメラ追従（スムーズ）
+        const leadX = selectedShip ? selectedShip.group.position.x : Math.max(...ships.map(s=>s.group.position.x));
+        controls.target.x += (leadX - controls.target.x) * 0.05;
+        camera.position.x += (leadX - 8 - camera.position.x) * 0.03;
+    }
+
+    // UI更新
+    document.getElementById('timer').innerText = simTime.toFixed(1) + "s";
+    
+    if(selectedShip) {
+        const s = selectedShip.stats;
+        document.getElementById('detailSpeed').innerHTML = s.speed.toFixed(2) + ' <span class="text-xs">m/s</span>';
+        document.getElementById('detailThrust').innerText = Math.round(s.thrust) + " N";
+        document.getElementById('detailDrag').innerText = Math.round(s.drag) + " N";
+        document.getElementById('detailEff').innerText = s.eff.toFixed(1) + " %";
+        document.getElementById('detailYaw').innerText = s.yaw.toFixed(2) + "°";
+        
+        // バーの更新
+        document.getElementById('speedBar').style.width = Math.min(100, s.speed*10) + "%";
+        document.getElementById('effBar').style.width = Math.min(100, s.eff) + "%";
+    }
+
+    controls.update(); 
+    renderer.render(scene, camera);
+}
+
+// イベントリスナー設定
+document.getElementById('powerRange').addEventListener('input', (e) => {
+    inputPower = parseInt(e.target.value); 
+    document.getElementById('powerDisplay').innerText = inputPower + " W";
+});
+
+document.getElementById('startBtn').addEventListener('click', () => {
+    isRunning = !isRunning; 
+    document.getElementById('startBtn').innerText = isRunning ? "Pause Simulation" : "Resume Simulation";
+    document.getElementById('startBtn').className = isRunning ? "btn btn-secondary" : "btn btn-primary";
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+    // 完全リセット処理
+    isRunning = false; 
+    simTime = 0; 
+    ships.forEach(s => s.reset());
+    
+    // パーティクル全削除
+    particles.forEach(p => scene.remove(p)); 
+    particles = [];
+    
+    // グラフクリア
+    charts.speed.data.labels = []; 
+    charts.eff.data.labels = [];
+    charts.speed.data.datasets.forEach(d => d.data = []); 
+    charts.eff.data.datasets.forEach(d => d.data = []);
+    charts.speed.update(); 
+    charts.eff.update();
+    
+    // UIリセット
+    document.getElementById('startBtn').innerText = "Simulation Start";
+    document.getElementById('startBtn').className = "btn btn-primary";
+    document.getElementById('detailPanel').style.display = 'none'; 
+    selectedShip = null;
+    
+    // カメラ位置リセット
+    camera.position.set(-18, 14, 25); 
+    controls.target.set(8, 0, 0);
+    
+    // 一度描画して初期状態を見せる
+    renderer.render(scene, camera);
+});
+
+document.getElementById('closeDetail').addEventListener('click', () => {
+    document.getElementById('detailPanel').style.display = 'none';
+    selectedShip = null;
+});
+
+window.addEventListener('resize', () => { 
+    camera.aspect = window.innerWidth/window.innerHeight; 
+    camera.updateProjectionMatrix(); 
+    renderer.setSize(window.innerWidth, window.innerHeight); 
+});
+
+// 開始
+init(); 
+animate();
+</script>
+</body>
+</html>
